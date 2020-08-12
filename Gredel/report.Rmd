@@ -1,0 +1,345 @@
+---
+title: "XGBoost Interpretation Report"
+author: "Keshav Bhandari"
+date: "March 20, 2019"
+output: 
+  word_document:
+    reference_docx: Format.docx
+    toc: true
+    toc_depth: 2
+params:
+  ls_pdp: "NULL"
+  ls_summary: "NULL"
+  ls_density: "NULL"
+  ls_dep_var_info: "NULL"
+  ls_importance: "NULL"
+  ls_lift: "NULL"
+  ls_accuracy: "NULL"
+  method: "classification"
+---
+
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+total_features <- length(params$ls_pdp)
+total_varimp_features <- params$ls_importance[["variable_importance_top_n_vars"]]
+dir <- getwd() #"C:/Users/kbhandari/OneDrive - Epsilon/Desktop/ML_Dashboard/"
+
+library(rmarkdown)
+library(knitr)
+```
+
+
+```{r test_lift, echo=FALSE, warning=FALSE, fig.width=4.9, fig.height=3.35, results='asis'}
+
+if(params[["method"]]=="classification"){
+  if(is.null(params$ls_lift[["test_lift"]]) == FALSE){
+    cat(paste0('## ',"Lift & Gain Charts on Test Dataset")," \n")
+    cat("  \n")
+    dt = params$ls_lift[["test_lift"]]
+  
+    print(ggplot(data = dt, aes(x = as.factor(bucket), group = 1)) + geom_line(aes(y=Cumlift),color="red") +
+    geom_point(aes(y=Cumlift)) + xlab("Deciles")+labs(title="Lift Chart") + theme_bw() + guides(fill=guide_legend("")))
+  
+    dt <- rbind(c(0,0,0,0,0,0),dt)
+    print(ggplot(data = dt, aes(x = as.factor(bucket), group = 1)) + geom_line(aes(y=dt$Gain),color="red") +
+    geom_point(aes(y=Gain)) + geom_line(aes(y=seq(0,100,length.out = 11)),color="black") + xlab("Deciles")+ ylab("Cumulative Gain")+labs(title="Cumulative Gain") + theme_bw() + guides(fill=guide_legend("")))
+  
+    dt <- dt[-1,]
+    dt$`% Responders` <- (dt$totalresp/dt$total)*100
+    kable(dt, digits=2, caption = "Lift Table")
+  }
+}
+
+```
+
+
+```{r test_accuracy, echo=FALSE, warning=FALSE, fig.width=4.9, fig.height=3.35, results='asis'}
+
+if(params[["method"]]=="classification"){
+  if(is.null(params$ls_accuracy[["test_accuracy"]]) == FALSE){
+    cat(paste0('## ',"Model Accuracy on Test Dataset")," \n")
+    cat("#####  \n")
+    dt_auc = params$ls_accuracy[["test_accuracy"]][["AUCmetric"]]
+    dt_confusion = params$ls_accuracy[["test_accuracy"]][["Confusion"]]
+  
+    print(kable(dt_auc, digits=4, caption = "Evaluation Metrics"))
+    cat('\n')
+    cat("  \n#####", "  \n")
+    cat('\n')
+    print(kable(dt_confusion, digits=2, caption = "Confusion Matrix"))
+  }else if(params[["method"]]=="regression" & is.null(params$ls_lift[["test_accuracy"]]) == FALSE){
+    cat(paste0('## ',"Model Accuracy on Test Dataset")," \n")
+    cat("#####  \n")
+    dt_eval = params$ls_accuracy[["test_accuracy"]]
+    print(kable(dt_eval, digits=4, caption = "Evaluation Metrics")) 
+  }
+}else if(params[["method"]]=="regression"){
+  if(is.null(params$ls_accuracy[["test_accuracy"]]) == FALSE){
+    cat(paste0('## ',"Model Accuracy on Test Dataset")," \n")
+    cat("#####  \n")
+    dt_eval = params$ls_accuracy[["test_accuracy"]]
+    print(kable(dt_eval, digits=4, caption = "Evaluation Metrics"))
+  }
+}
+
+```
+
+
+```{r echo=FALSE, warning=FALSE, fig.width=4.9, fig.height=3.35, results='asis'}
+
+if(params[["method"]]=="classification"){
+  cat(paste0('## ',"Lift & Gain Charts on Validation Dataset")," \n")
+  cat("  \n")
+  dt = params$ls_lift[["validation_lift"]]
+
+  print(ggplot(data = dt, aes(x = as.factor(bucket), group = 1)) + geom_line(aes(y=Cumlift),color="red") +
+  geom_point(aes(y=Cumlift)) + xlab("Deciles")+labs(title="Lift Chart") + theme_bw() + guides(fill=guide_legend("")))
+
+  dt <- rbind(c(0,0,0,0,0,0),dt)
+  print(ggplot(data = dt, aes(x = as.factor(bucket), group = 1)) + geom_line(aes(y=dt$Gain),color="red") +
+  geom_point(aes(y=Gain)) + geom_line(aes(y=seq(0,100,length.out = 11)),color="black") + xlab("Deciles")+ ylab("Cumulative Gain")+labs(title="Cumulative Gain") + theme_bw() + guides(fill=guide_legend("")))
+
+  dt <- dt[-1,]
+  dt$`% Responders` <- (dt$totalresp/dt$total)*100
+  kable(dt, digits=2, caption = "Lift Table")
+}
+
+```
+
+
+```{r echo=FALSE, warning=FALSE, fig.width=4.9, fig.height=3.35, results='asis'}
+
+if(params[["method"]]=="classification"){
+  cat(paste0('## ',"Model Accuracy on Validation Dataset")," \n")
+  cat("#####  \n")
+  dt_auc = params$ls_accuracy[["valid_accuracy"]][["AUCmetric"]]
+  dt_confusion = params$ls_accuracy[["valid_accuracy"]][["Confusion"]]
+
+  print(kable(dt_auc, digits=4, caption = "Evaluation Metrics"))
+  cat('\n')
+  cat("  \n#####", "  \n")
+  cat('\n')
+  print(kable(dt_confusion, digits=2, caption = "Confusion Matrix"))
+}else if(params[["method"]]=="regression"){
+  cat(paste0('## ',"Model Accuracy on Validation Dataset")," \n")
+  cat("#####  \n")
+  dt_eval = params$ls_accuracy[["valid_accuracy"]]
+  print(kable(dt_eval, digits=4, caption = "Evaluation Metrics"))
+}
+
+```
+
+
+```{r echo=FALSE, warning=FALSE, fig.width=4.9, fig.height=3.35, results='asis'}
+
+if(params[["method"]]=="classification"){
+  cat(paste0('## ',"Lift & Gain Charts on Train Dataset")," \n")
+  cat("  \n")
+  dt = params$ls_lift[["train_lift"]]
+
+  print(ggplot(data = dt, aes(x = as.factor(bucket), group = 1)) + geom_line(aes(y=Cumlift),color="red") +
+  geom_point(aes(y=Cumlift)) + xlab("Deciles")+labs(title="Lift Chart") + theme_bw() + guides(fill=guide_legend("")))
+
+  dt <- rbind(c(0,0,0,0,0,0),dt)
+  print(ggplot(data = dt, aes(x = as.factor(bucket), group = 1)) + geom_line(aes(y=dt$Gain),color="red") +
+  geom_point(aes(y=Gain)) + geom_line(aes(y=seq(0,100,length.out = 11)),color="black") + xlab("Deciles")+ ylab("Cumulative Gain")+labs(title="Cumulative Gain") + theme_bw() + guides(fill=guide_legend("")))
+
+  dt <- dt[-1,]
+  dt$`% Responders` <- (dt$totalresp/dt$total)*100
+  print(kable(dt, digits=2, caption = "Lift Table"))
+
+  cat('\n')
+  cat("  \n#####", "  \n")
+  cat('\n')
+  # cat("See the interpretation: [FAQ](#Frequently-Asked-Questions)")
+}
+
+```
+
+
+```{r echo=FALSE, warning=FALSE, fig.width=4.9, fig.height=3.35, results='asis'}
+
+if(params[["method"]]=="classification"){
+  cat(paste0('## ',"Model Accuracy on Train Dataset")," \n")
+  cat("#####  \n")
+  dt_auc = params$ls_accuracy[["train_accuracy"]][["AUCmetric"]]
+  dt_confusion = params$ls_accuracy[["train_accuracy"]][["Confusion"]]
+
+  print(kable(dt_auc, digits=4, caption = "Evaluation Metrics"))
+  cat('\n')
+  cat("  \n#####", "  \n")
+  cat('\n')
+  print(kable(dt_confusion, digits=2, caption = "Confusion Matrix"))
+}else if(params[["method"]]=="regression"){
+  cat(paste0('## ',"Model Accuracy on Train Dataset")," \n")
+  cat("#####  \n")
+  dt_eval = params$ls_accuracy[["train_accuracy"]]
+  print(kable(dt_eval, digits=4, caption = "Evaluation Metrics"))
+}
+
+```
+
+## Response Variable Summary Statistics
+
+```{r, echo=FALSE, results='asis', fig.width=4, fig.height=3.2, warning=FALSE}
+
+cat("#####  \n")
+
+kable(params$ls_dep_var_info[["train_y_info"]], digits=2, caption = "Train")
+
+cat("#####  \n")
+
+if(is.null(params$ls_dep_var_info[["validation_y_info"]])==FALSE){
+  cat("\n")
+  print(kable(params$ls_dep_var_info[["validation_y_info"]], digits = 2, caption = "Validation"))
+  cat("\n")
+}
+
+cat("#####  \n")
+
+params$ls_dep_var_info[["train_y_density_plot"]]
+
+cat('\n')
+cat("  \n#####", "  \n")
+cat('\n')
+cat("Go back to table of contents: [Click Here](#Table_of_Contents)")
+
+```
+
+## Variable Importance
+
+The Gain implies the relative contribution of the corresponding feature to the model calculated by taking each feature's contribution for each tree in the model. A higher value of this metric when compared to another feature implies it is more important for generating a prediction.
+
+```{r echo=FALSE, results='asis', fig.width=8, fig.height=5.5}
+
+tryCatch(
+  print(ggplot(params$ls_importance[["variable_importance"]][1:total_varimp_features,],
+       aes(x=reorder(Feature,Gain), y=Gain,fill=Gain))+ 
+        geom_bar(stat="identity", position="dodge", show.legend = T)+ coord_flip()+
+        ylab("Gain")+
+        xlab(as.character("Variable Importance"))+
+        ggtitle(paste0("Variable Importance by ","Gain"))+
+        scale_fill_gradient(low="red", high="blue")+labs(fill="Gain")+theme_bw())
+,error = function(e){
+  print(ggplot(params$ls_importance[["variable_importance"]][1:total_varimp_features,],
+       aes(x=reorder(Feature,Weight), y=Weight, fill=Weight))+ 
+       geom_bar(stat="identity", position="dodge", show.legend = T)+ coord_flip()+
+       ylab("Weight")+
+       xlab(as.character("Variable Importance"))+
+       ggtitle(paste0("Variable Importance by ",as.character("Weight")))+
+       scale_fill_gradient(low="red", high="blue")+labs(fill="Weight")+theme_bw())
+}
+)
+
+cat('\n')
+cat("  \n#####", "  \n")
+cat('\n')
+cat("Go back to table of contents: [Click Here](#Table_of_Contents)")
+```
+
+## Interpretation of PDP Plots
+
+The partial dependence plot shows the marginal effect of a feature on the predicted outcome of a previously fit model (J. H. Friedman). A partial dependence plot can show if the relationship between the target and a feature is linear, monotonic or more complex. Applied to a linear regression model, partial dependence plots will always show a linear relationship, for example. For a classification problem, an increasing trend of the partial dependence function implies a higher likelihood of the occurence of an event and vice versa.
+
+**Example:** The following example is sourced from a well known UCL machine learning repository (bank classifying term deposit subscriptions). The response variable indicates whether the client subscribed to a term deposit (binary: 1 for 'yes', 0 for 'no'). The variable of interest is 'duration' which is the last contact duration, in seconds (numeric) and is the most important variable in the prediction of term deposit subscriptions. An XGBoost model was fit to this dataset.
+
+```{r echo=FALSE}
+knitr::include_graphics(paste0(dir,"pdp_interpretation.png"))
+```
+
+The partial dependency plot above indicates as the duration of the call goes up till around 1,600 seconds, the probability of the event occurring (client subscribing to the term deposit) is at its peak, holding all the other variables constant. This makes sense as the more the bank talks to a target client the higher the probability the target client will open a term deposit since a higher duration means a higher interest (commitment) from the potential client. Beyond 1600 seconds, the marginal effect of duration on the model's predicted outcome starts decreasing slightly and after 2,800 seconds the trend is stagnant, indicating there is no effect of duration on term deposit subscriptions at this range. The density plot shows us the sparsity of values for the 'duration' variable after 2,250 seconds implying there are not many data points in that region and that we might not be able to confidently rely on the interpretation of the machine learning model predictions for values beyond this range.
+
+```{r echo=FALSE, warning=FALSE, results='asis', fig.width=4.9, fig.height=3.5}
+
+if(params[["method"]]=="classification"){
+  label <- "Probability"
+}else{
+  label <- "Response"
+}
+
+for (i in 1:total_features) {
+  cat('\n')
+  cat(paste0('## ',names(params$ls_pdp[i]))," \n")
+  cat("  \n#####", "  \n")
+  cat('\n')
+  
+  # var <- as.character(params$ls_importance[["variable_importance"]][i,1])
+  var <- names(params$ls_pdp[i])
+  
+  pdp_df <- params$ls_pdp[[var]]
+  
+  pdp_plot <-  ggplot() + 
+    geom_line(data=pdp_df, aes(pdp_df[,1], yhat),colour="blue") +
+    xlab(var)+
+    ylab(label)+
+    labs(title="Partial Dependence Plot")+
+    theme_bw()
+  
+  print(kable(params$ls_summary[[var]], digits=2, caption = "Summary Statistics"))
+  cat("  \n#####", "  \n")
+  cat('\n')
+  
+  print(params$ls_density[[var]])
+  print(pdp_plot)
+  cat('\n')
+  cat("  \n#####", "  \n")
+  cat("  \n#####", "  \n")
+  cat("  \n#####", "  \n")
+  cat("  \n#####", "  \n")
+  
+  cat("Go back to table of contents: [Click Here](#Table_of_Contents)")
+  cat('\n')
+  
+}
+
+```
+
+## Frequently Asked Questions
+
+**1. What do the Y-axis mean in partial dependence plots?**  
+The y-axis of a partial dependence plot for classification represents the marginal impact of the independent variable to the dependent variable, holding the other variables constant. It does not represent the predicted value or relative impact of this variable to other variables.
+
+**2. How does one interpret the density/distribution plot?**  
+A density plot is a smoothed, continuous version of a histogram estimated from the data. This chart is a variation of a Histogram that uses kernel smoothing to plot values, allowing for smoother distributions by smoothing out the noise. The peaks of a Density Plot help display where values are concentrated over the interval.
+
+**3. What does the Y-axis of density plots represent?**  
+The y-axis in a density plot is the probability density function for the kernel density estimation. However, we need to be careful to specify this is a probability density and not a probability. The difference is the probability density is the probability per unit on the x-axis. To convert to an actual probability, we need to find the area under the curve for a specific interval on the x-axis. Somewhat confusingly, because this is a probability density and not a probability, the y-axis can take values greater than one. The only requirement of the density plot is that the total area under the curve integrates to one. One can think of the y-axis on a density plot as a value only for relative comparisons between different categories.
+
+**4. How do the density plots add value to partial dependence plots?**  
+The density plots enhance the interpretation of partial dependence plots by showing us the distribution of an independent variable with respect to the dependent variable. Sparsely populated intervals of the density plot indicate low confidence for the corresponding X-axis range in a partial dependence plot. In contrast, highly populated areas of the density plot add greater trust to the interpretation of the partial dependence plot for the corresponding X-axis interval of the variable of interest.
+
+In addition, it helps Validate general business interpretations for the variable of interest by comparing its actual distribution broken out by the response variable to what is predicted by the model. To see the interpretation of PDP plots with an example: [Click Here](#Interpretation-of-PDP-Plots)
+
+**5. How does one interpret the gain and lift charts?**  
+Gain and Lift charts are used to evaluate performance of classification model. They measure how much better one can expect to do with the predictive model than without it. 
+
+Gain at a given decile level is the ratio of cumulative number of targets (events) up to that decile to the total number of targets (events) in the entire data set. 
+
+Lift measures how much better one can expect to do with the predictive model comparing without a model. It is the ratio of gain % to the random expectation % at a given decile level. The random expectation at the 5th decile is 50%.
+
+\newline
+
+Go back to table of contents: [Click Here](#Table_of_Contents)
+
+## Methodology of Constructing PDP Plots
+
+Partial dependence plot is plotting the independent variable x1 vs the model outcome y_bar, after considering the average effect of other independent variables in the model. Notice that partial dependence plot is NOT plotting relationship between independent variables and target variable.
+
+Suppose we have the model equation F(.). One independent variable is X1 and all other independent variables are Xc. Suppose X1 has multiple values (X11,X12,X13....X1n). For each value (X1i), we can have a partial dependence function: avg(F(X1=X1i, Xc=Xc_full)). Here we fix X1=X1i, while other variables Xc_full is the full set of data. Let's use a graph to further explain:
+
+```{r echo=FALSE, fig.width=8.89, fig.height=3.47}
+knitr::include_graphics(paste0(dir,"pdp_methodology.png"))
+```
+
+From the above explanation, we can find that we are plotting the "marginal effect" of X1 on the predict outcome F(.) by averaging the effect of other variables on F(.). In other words, we are averaging the predicted probabilities obtained from the XGBoost model when X1 = 1, when X1 = 2 and when X1 = 3. The 3 average values obtained from the table on the top right side would then be used to construct the partial dependence plot. This plot is particular useful when we want to figure out the "marginal effect" of one (or several) particular variable(s) on the predicted outcome when using ensemble data mining methods (like boost or bagging). Because of its complex nature, we cannot identify the marginal effect by simply reviewing the equation.
+
+\newline
+
+Go back to table of contents: [Click Here](#Table_of_Contents)
+
+## Credits and Acknowledgements
+Keshav Bhandari  
+Tuhin Saha  
+Chandan Panda

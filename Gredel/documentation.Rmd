@@ -1,0 +1,101 @@
+---
+title: "Documentation"
+author: "Keshav Bhandari"
+output: html_document
+---
+
+
+
+## Getting Started
+
+This is a simple Shiny App to help you get started with data preprocessing, exploratory data analysis, feature engineering and interpretable machine learning with XGBoost. 
+
+XGBoost is a famous implementation of the gradient boosting frame. It is widely used among the data science community, and usually yields great results. You can find more about XGBoost <a href="https://xgboost.readthedocs.io/en/latest//">here</a>
+
+This app allows you to do the following:
+
+* Train a XGBoost model
+* Evaluate the model's performance
+* Score it on a hold out dataset
+* Interpret the model
+* Download SQL like statements to score it in a SAS environment
+* Download the model's RData to use it again later
+
+## Upload Dataset
+
+The first step is to upload a train dataset which should be a CSV file with a header. The header should have the columns names. Uploading a test dataset is optional. The presence of the dependent variable in the test dataset is optional. However, the other test dataset column names should match that of the train dataset.
+
+As an example, have a look at the <a href="https://github.com/paulhendricks/titanic">Titanic dataset</a> or the <a href="https://stat.ethz.ch/R-manual/R-devel/library/datasets/html/iris.html">Iris dataset</a>.
+
+For the 'use existing model' tab, a XGBoost RData file also needs to be uploaded in addition to the train dataset.
+
+## Data Preprocess
+
+After uploading the dataset, you will be prompted to select the dependent variable. This is the variable which the model will predict. On the classification tab, if the variable chosen is categorical such as "yes/no", then this will be automatically converted to binary: 1 and 0. The event label **1** would be determined based on the lesser count of the variable's value. For example, 40% 'yes' and 60% 'no' values would be converted to 40% 1s and 60% 0s. **Once the selection is made, it is not recommended to go back and change the dependent variable after proceeding to the next step.**
+
+Optionally the 'missing value treatment' and 'one hot encoding' can be selected before proceeding to the EDA section.
+
+Missing value treatment will replace all instances of missing values with the median for a continuous variable and mode for a categorical variable.
+
+One hot encoding will create new binary columns based on the levels of a categorical variable.
+
+The structure of the dataset is displayed in the 'Data Structure' tab with the data type of all variables along with examples of values they contain.
+
+## EDA
+
+The 'dependent variable information' tab gives the count and proportion of events and non events. This can be visualized with the help of the density plot.
+
+The 'variable summary' tab gives a summary of the independent variable selected by the dropdown.
+
+The independent variable chosen in the dropdown menu can be visualized in the 'variable distribution' tab. For a continuous variable, the visualization options include histogram, density plot and box plot. These are plotted against the dependent variable. For categorical variables, one can choose between a bar plot, stacked bar plot with event rates and pie chart with percentage of occurrences of the top 10 levels. For a categorical variable with more than 10 levels, the pie chart would club the levels as 'Other' category and display only the top 10 levels.
+
+The 'missing value summary' tab displays a count of missing values by variables.
+
+## Feature Engineering
+
+The feature engineering section provides the user a selection of the most popular feature engineering methods used.
+
+New variables created will be added to the end of the dataset. If the new variable is not displaying, it is likely that it there was an error and it hasn't been created. Check the selection of inputs and try again. 
+
+One hot encoding will be required beyond this section so if it is not already done, clicking on the 'proceed to variable selection' button will automatically do it. 
+
+## Variable Selection
+
+The variable selection section is useful when the dataset has a vast number of variables, out of which some are redundant for the model building step.
+
+The 'compute correlation' button will compute the correlation of the independent variable selected in the dropdown with the other independent variables. The output can be sorted by the correlation coefficients and filtered by variable if required.
+
+The 'compute information value' button calculates the adjusted information value for all independent variables. This can be then used to filter out variables which have a very low (redundant variables) or very high (leakage variables) information value score.
+
+The 'compute statistical signifiance' button runs multiple logistic regression models on single independent variables, rotated one at a time. The 'statistical signifiance' tab displays a list of all independent variables and whether they are significant or not. This is determined based on the P-values from the logistic models.
+
+## XGBoost Model Build
+
+This section provides a list of parameters which are be used to build the XGBoost model. Most of the values displayed are set to the default.
+
+You can find more about XGBoost parameters <a https://xgboost.readthedocs.io/en/latest//parameter.html#parameters-in-r-package">here</a>
+
+Once the model is built, the lift charts and evaluation metrics will be displayed in the other tabs. If a test dataset is uploaded with the dependent variable present, the lift chart and evaluation metrics will also be shown for that in the last two tabs.
+
+## XGBoost Model Interpretation
+
+This section will be used to uncover the black box. In other words, the user can draw insights from the model with the following interpretation components:
+
+* Variable Importance - Clicking on the variable importance button plots a graph showing the variables in their order of importance from highest to lowest. The number of variables displayed can be controlled. 
+* Direction of Impact - The direction of how the independent variable impacts the dependent variable can be seen with the help of the partial dependence plot.
+* Magnitude of Impact - The magnitude of how the independent variable impacts the dependent variable can be seen with the help of the parital dependence plot.
+* Statistical Significance - To some extent, the statistical significance can be seen with the help of the density plots.
+
+The whole report can be downloaded with the click of the 'download report' button.
+
+To score a new dataset in a SAS environment, click on the 'score model in SAS' button. This will generate a list of SAS case statements which can be used to predict the probabilities of the event occurring for a new or hold out dataset in SAS.
+
+If a test dataset was uploaded, then the predictions can be downloaded by clicking on the 'Download Predictions for Test Data' button.
+
+To save the model object as RData to use it later outside the app, click on the 'Download Model As RData' button.
+
+<br>
+<br>
+*For questions or to report any bugs, please email keshav.bhandari@epsilon.com*
+<br>
+Enjoy!

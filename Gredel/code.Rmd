@@ -1,0 +1,787 @@
+---
+title: "Get The Code"
+author: "Keshav Bhandari"
+date: "May 6, 2019"
+output: html_document
+runtime: shiny
+---
+
+
+# Table of Contents
+
+[Missing Value](#missing-value)
+
+[One Hot Encoding](#one-hot-encoding)
+
+[Treat Depdendent Variable](#treat-dependent-variable)
+
+[Table Structure](#table-structure)
+
+[Dependent Variable Summary](#dependent-variable-summary)
+
+[Independent Variable Summary](#independent-variable-summary)
+
+[Plots](#plots)
+
+[Categorical Value Replacement](#categorical-value-replacement)
+
+[Feature Engineering](#feature-engineering)
+
+[Variable Selection](#variable-selection)
+
+[Train Test Split](#train-test-split)
+
+[XGBoost Model Build](#xgboost-model-build)
+
+[Model Evaluation](#model-evaluation)
+
+[Model Interpretation](#model-interpretation)
+
+
+## Missing Value
+
+```{r MissingValue}
+
+#Summary of missing values
+missing_value_summary <- function(df){
+  miss <- sapply(df, function(x) sum(is.na(x)))
+  return(miss)
+}
+
+#Treat missing value for whole dataset
+treat_Missing <- function(df){
+  Mode <- function(x) {
+    ux <- unique(x)
+    ux[which.max(tabulate(match(x, ux)))]
+  }
+  df[,] <- lapply(df[,], function(x) {
+    if(class(x)=="factor" | class(x)=="character") replace(x, is.na(x), Mode(na.omit(x)))
+    else if(class(x)=="numeric") replace(x, is.na(x), median(x, na.rm=TRUE))
+    else if(class(x)=="integer") replace(x, is.na(x), Mode(na.omit(x)))
+    else x
+  })
+  return(df)
+}
+
+#Treat missing value for specific column based on method ('auto', 'manual')
+fe_treat_Missing <- function(df, indep_var, method, missing_value){
+  Mode <- function(x) {
+    ux <- unique(x)
+    ux[which.max(tabulate(match(x, ux)))]
+  }
+  if(method=="auto"){
+    if(class(df[,indep_var])=="factor" | class(df[,indep_var])=="character"){
+      df[is.na(df[,indep_var]),indep_var] <- Mode(df[,indep_var])
+    }else if(class(df[,indep_var])=="numeric" | class(df[,indep_var])=="integer"){
+      df[is.na(df[,indep_var]),indep_var] <- median(df[,indep_var],na.rm = TRUE)
+    }
+  }else if(method=="manual"){
+    if(class(df[,indep_var])=="factor"){
+      df[,indep_var] <- `levels<-`(addNA(df[,indep_var]), c(levels(df[,indep_var]), missing_value))
+    }else if(class(df[,indep_var])=="character"){
+      df[is.na(df[,indep_var]),indep_var] <- missing_value
+    }else if(class(df[,indep_var])=="numeric" | class(df[,indep_var])=="integer"){
+      tryCatch({
+        missing_value <- as.numeric(missing_value)
+        df[is.na(df[,indep_var]),indep_var] <- missing_value
+      },
+      warning = function(w){
+        return(df)
+      },
+      error = function(e){
+        return(df)
+      })
+    }
+  }
+  return(df)
+}
+```
+[Go back to the top of the page](#top)
+
+## One Hot Encoding
+
+```{r OneHotEncoding}
+
+create_dummies <- function(df){
+  n <- 1
+  for (i in 1) {
+    #Checking if variables have same length as dataframe
+    id_var_logic <- sapply(df, function(x) length(unique(x))==nrow(df) & (class(x)=="factor" | class(x)=="character"))
+    if('TRUE' %in% id_var_logic){
+      id_vars <- names(which(id_var_logic,TRUE))
+      #Creating dummies without id_vars
+      df <- dummy.data.frame(df[,setdiff(colnames(df),id_vars)], sep="_")
+    }else{
+      #Creating dummies from data with no IDs
+      df <- dummy.data.frame(df, sep="_")
+    }
+    return(df)
+  }
+}
+```
+[Go back to the top of the page](#top)
+
+## Treat Dependent Variable
+
+```{r TreatDepVar}
+
+treat_dep_var_cfn <- function(df, dep_var){
+  if(length(unique(df[,dep_var]))==2){
+    event <- names(which.min(table(df[,dep_var])))
+    non_event <- names(which.max(table(df[,dep_var])))
+    if(class(df[,dep_var])=="character"){
+      df[df[,dep_var]==event,dep_var] <- 1
+      df[df[,dep_var]==non_event,dep_var] <- 0
+      df[,dep_var] <- as.integer(df[,dep_var])
+    }else if(class(df[,dep_var])=="factor"){
+      levels(df[,dep_var])[levels(df[,dep_var]) == event] <- 1
+      levels(df[,dep_var])[levels(df[,dep_var]) == non_event] <- 0
+      df[,dep_var] <- as.integer(as.character(df[,dep_var]))
+    }else if(class(df[,dep_var])=="integer"){
+      if((0 %in% df[,dep_var] & 1 %in% df[,dep_var])==FALSE){
+        validate("Column doesn't contain 0 and 1 values")
+      }
+    }else if((class(df[,dep_var])=="numeric")){
+      if((0.0 %in% df[,dep_var] & 1.0 %in% df[,dep_var])==FALSE){
+        validate("Column doesn't contain 0 and 1 values")
+      }
+    }
+    return(df)
+  }else{
+    validate("Dependent variable has more than 2 levels")
+  }
+}
+```
+[Go back to the top of the page](#top)
+
+## Table Structure
+
+```{r TableStructure}
+
+strtable <- function(df, n=4, width=60, n.levels=n, width.levels=width, factor.values=as.character) {
+  #n the first n element to show
+  #width maximum width in characters for the examples to show
+  #n.levels the first n levels of a factor to show.
+  #width.levels maximum width in characters for the number of levels to show.
+  #factor.values function defining how factor examples should be printed. Possible values are \code{as.character} or \code{as.integer}.
+  #stopifnot(is.data.frame(df))
+  tab <- data.frame(variable=names(df),
+                    class=rep(as.character(NA), ncol(df)),
+                    levels=rep(as.character(NA), ncol(df)),
+                    examples=rep(as.character(NA), ncol(df)),
+                    stringsAsFactors=FALSE)
+  collapse.values <- function(col, n, width) {
+    result <- NA
+    for(j in 1:min(n, length(col))) {
+      el <- ifelse(is.numeric(col),
+                   paste0(col[1:j], collapse=', '),
+                   paste0('"', col[1:j], '"', collapse=', '))
+      if(nchar(el) <= width) {
+        result <- el
+      } else {
+        break
+      }
+    }
+    if(length(col) > n) {
+      return(paste0(result, ', ...'))
+    } else {
+      return(result)
+    }
+  }
+  
+  for(i in seq_along(df)) {
+    if(is.factor(df[,i])) {
+      tab[i,]$class <- paste0('Factor w/ ', nlevels(df[,i]), ' levels')
+      tab[i,]$levels <- collapse.values(levels(df[,i]), n=n.levels, width=width.levels)
+      tab[i,]$examples <- collapse.values(factor.values(df[,i]), n=n, width=width)
+    } else {
+      tab[i,]$class <- class(df[,i])[1]
+      tab[i,]$examples <- collapse.values(df[,i], n=n, width=width)
+    }
+    
+  }
+  
+  class(tab) <- c('strtable', 'data.frame')
+  return(tab)
+}
+```
+[Go back to the top of the page](#top)
+
+## Dependent Variable Summary
+
+```{r DVTable}
+
+dvtable_cfn <- function(df, dep_var){
+  tbl_freq <- data.frame(table(df[,dep_var]))
+  tbl_freq <- setNames(tbl_freq, c("Level","Frequency"))
+  tbl_prop <- data.frame(prop.table(table(df[,dep_var])))
+  tbl_prop <- setNames(tbl_prop, c("Level","Proportion"))
+  tbl <- merge(tbl_freq, tbl_prop, by = "Level")
+  return(tbl)
+}
+
+dvtable_rgn <- function(df, dep_var){
+  summary_df <- setNames(data.frame(unclass(summary(df[,dep_var]))),dep_var)
+  Unique <- c(length(unique(df[,dep_var])))
+  summary_df <- rbind(summary_df, Unique=Unique)
+  summary_df <- t(summary_df)
+  return(summary_df)
+}
+```
+[Go back to the top of the page](#top)
+
+## Independent Variable Summary
+
+```{r IVTable}
+var_summary <- function(df,indep_var){
+  tbl <- summary(df[,indep_var])
+  return(tbl)
+}
+```
+[Go back to the top of the page](#top)
+
+## Plots
+
+```{r Plots}
+density_plot <- function(df,indep_var,dep_var,method="cfn"){
+  if(method=="cfn"){
+    ggplot(df, aes(x=df[,indep_var], fill=as.factor(df[,dep_var])))+
+      geom_density(alpha=0.4)+labs(title="Density Plot")+
+      xlab(indep_var)+
+      scale_fill_discrete(name = dep_var)+theme_bw()
+  }else if(method=="rgn"){
+    ggplot(df, aes(x=df[,indep_var]))+
+      geom_density(fill="pink")+
+      labs(title="Density Plot")+xlab(indep_var)+theme_bw()
+  }
+}
+
+histogram_plot <- function(df,indep_var,dep_var, bins, method = "cfn"){
+  if(method=="cfn"){
+    ggplot(df, aes(x = df[,indep_var])) + 
+      geom_histogram(aes(color = as.factor(df[,dep_var]),fill = as.factor(df[,dep_var])), 
+                     alpha = 0.4, bins = bins,
+                     position = "identity") +
+      xlab(indep_var) +
+      scale_fill_manual(name = dep_var,values = c("#00AFBB", "#E7B800")) +
+      scale_color_manual(name = dep_var,values = c("#00AFBB", "#E7B800"))
+  }else if(method=="rgn"){
+    ggplot(df, aes(x=df[,indep_var]))+
+      geom_histogram(color="darkblue", fill="blue",alpha = 0.4, bins = bins,
+                     position = "identity") +
+      xlab(indep_var)
+  }
+}
+
+box_plot <- function(df,indep_var,dep_var, sample_rate=0.1, method="cfn"){
+  s <- sample.int(n = nrow(df), size = floor(sample_rate*nrow(df)), replace = F)
+  if(method=="cfn"){
+    ggplot(df[s,], aes(x = factor(1), y = df[s,indep_var])) +
+      geom_boxplot(width = 0.4, fill = "white") +
+      geom_jitter(aes(color = as.factor(df[s,dep_var])), 
+                  width = 0.1, size = 1) +
+      scale_color_manual(name = dep_var, values = c("#00AFBB", "#E7B800")) + 
+      labs(x = NULL) +   # Remove x axis label
+      labs(y = indep_var)
+  }else if(method=="rgn_cont"){
+    ggplot(df, aes(x = factor(1), y = df[,indep_var])) +
+      geom_boxplot(width = 0.4, fill = "orange") +
+      labs(x = NULL) +   # Remove x axis label
+      labs(y = indep_var) + theme_bw()
+  }else if(method=="rgn_cat"){
+    if(length(unique(df[,indep_var]))>10){
+      lf <- names(prop.table(table(df[,indep_var])))[10:length(table(df[,indep_var]))]
+      for (variable in lf) {
+        levels(df[,indep_var])[levels(df[,indep_var]) == variable] <- "Other"
+      }
+    }
+    ggplot(df, aes(x = as.factor(df[,indep_var]), y = df[,dep_var], fill = as.factor(df[,indep_var]))) +
+      geom_boxplot(outlier.color = "black", outlier.shape = 16, outlier.size = 2) +
+      labs(x = NULL) + labs(y = dep_var)+ guides(fill=guide_legend(title=indep_var))
+  }
+}
+
+bar_plot <- function(df,indep_var,dep_var){
+  if(length(unique(df[,indep_var]))>10){
+    lf <- names(prop.table(table(df[,indep_var])))[10:length(table(df[,indep_var]))]
+    for (variable in lf) {
+      levels(df[,indep_var])[levels(df[,indep_var]) == variable] <- "Other"
+    }
+  }
+  ggplot(df, aes(df[,indep_var])) +
+    geom_bar(fill = "#0073C2FF") +
+    xlab(indep_var) + 
+    theme(
+      panel.background = element_rect(fill = "transparent") # bg of the panel
+      , plot.background = element_rect(fill = "transparent", color = NA) # bg of the plot
+      , panel.grid.major = element_blank() # get rid of major grid
+      , panel.grid.minor = element_blank() # get rid of minor grid
+      , legend.background = element_rect(fill = "transparent") # get rid of legend bg
+      , legend.box.background = element_rect(fill = "transparent") # get rid of legend panel bg
+    )
+}
+
+stacked_bar_plot <- function(df,indep_var,dep_var){
+  if(length(unique(df[,indep_var]))>10){
+    lf <- names(prop.table(table(df[,indep_var])))[10:length(table(df[,indep_var]))]
+    for (variable in lf) {
+      levels(df[,indep_var])[levels(df[,indep_var]) == variable] <- "Other"
+    }
+  }
+  a <- data.frame(table(df[,dep_var],df[,indep_var]))
+  a <- setNames(a,c(dep_var,indep_var,"Percentage"))
+  a$Percentage <- round(a$Percentage,2)
+  a$Percentage2 <- round(a$Percentage/sum(a$Percentage),2)
+  a <- setNames(a,c("dep_var", indep_var, "Percentage","Percentage2"))
+  
+  a2 <- dplyr::group_by(a, a[,indep_var]) %>% dplyr::transmute(dep_var, Percentage = round(Percentage/sum(Percentage),2))
+  a2 <- setNames(a2,c("indep_var", dep_var, "Percentage"))
+  a2 <- plyr::ddply(a2, plyr::.(indep_var),transform, pos = (ifelse(Percentage<0.5,Percentage*0.5,(1-Percentage)+Percentage*0.5)))
+  a2 <- setNames(a2,c(indep_var, dep_var, "Percentage","pos"))
+  
+  ggplot(data = a2, 
+         aes(x = a2[,indep_var], 
+             y = Percentage, 
+             fill = a2[,dep_var],
+             cumulative = TRUE)) +
+    geom_col() +
+    geom_text(aes(label = paste0(Percentage*100,"%")), 
+              position = position_stack(vjust = 0.5)) + 
+    xlab(indep_var) + scale_fill_discrete(name = dep_var) +
+    theme_minimal()
+}
+
+pie_chart <- function(df,indep_var){
+  if(length(unique(df[,indep_var]))>10){
+    lf <- names(prop.table(table(df[,indep_var])))[10:length(table(df[,indep_var]))]
+    for (variable in lf) {
+      levels(df[,indep_var])[levels(df[,indep_var]) == variable] <- "Other"
+    }
+  }
+  tbl <- as.data.frame(table(df[,indep_var]))
+  setnames(tbl,names(tbl),c("Variable","Frequency"))
+  tbl$Proportion <- tbl$Frequency/sum(tbl$Frequency)
+  rownames(tbl) <- NULL
+  tbl$Variable <- as.character(tbl$Variable)
+  tbl <- tbl[order(tbl$Variable),]
+  tbl <- tbl[order(rev(tbl$Variable)),]
+  tbl$Variable <- as.factor(tbl$Variable)
+  tbl$Proportion <- round(tbl$Proportion,2)
+  
+  ggplot(data=tbl)+
+    geom_bar(aes(x="", y=Proportion, fill=Variable), stat="identity", width = 1)+
+    coord_polar("y", start=0)+
+    theme_void()+
+    geom_text(aes(x=1, y = cumsum(Proportion) - Proportion/2, label=paste0(Proportion*100,'%')))
+}
+```
+[Go back to the top of the page](#top)
+
+## Categorical Value Replacement
+
+```{r CatReplacement}
+cat_replacement <- function(method,df,indep_var,dep_var){
+  if(class(df[,indep_var])=="factor"|class(df[,indep_var])=="character"){
+    if(method=="frequency"){
+      tbl <- as.data.frame(table(df[,indep_var]))
+      var_name <- paste0(indep_var,"_frequency_engineered")
+      df[,var_name] <- tbl$Freq[match(unlist(df[,indep_var]),tbl$Var1)]
+    }else if(method=="event_rate"){
+      tbl <- as.data.frame.matrix(prop.table(table(df[,indep_var], df[,dep_var])))
+      tbl$values <- row.names(tbl)
+      row.names(tbl) <- NULL
+      var_name <- paste0(indep_var,"_event_rate_engineered")
+      df[,var_name] <- tbl$`1`[match(unlist(df[,indep_var]), tbl$values)]
+    }else if(method=="mean"){
+      tbl <- aggregate(df[,dep_var], list(df[,indep_var]), mean)
+      tbl <- setNames(tbl,c("variable", "mean"))
+      var_name <- paste0(indep_var,"_mean_engineered")
+      df[,var_name] <- tbl$`mean`[match(unlist(df[,indep_var]), tbl$variable)]
+    }
+  }
+  return(df)
+}
+```
+[Go back to the top of the page](#top)
+
+## Feature Engineering
+
+```{r FeatureEngineering}
+text_extraction <- function(df, indep_var, method, text_to_find){
+  if(method=="contains"){
+    var_name <- paste0(indep_var, "_contains_", text_to_find)
+    df[,var_name] <- ifelse(grepl(text_to_find, df[,indep_var]), 1, 0)
+  }else if(method=="equals"){
+    var_name <- paste0(indep_var, "_equals_", text_to_find)
+    df[,var_name] <- ifelse(df[,indep_var] == text_to_find, 1, 0)
+  }
+  return(df)
+}
+
+transformations <- function(df, indep_var, method){
+  if(class(df[,indep_var])=="numeric" | class(df[,indep_var])=="integer"){
+    if(method=="log"){
+      var_name <- paste0(indep_var, "_log")
+      df[,var_name] <- log(df[,indep_var])
+      df[,var_name][df[,var_name]==Inf | df[,var_name]==-Inf] <- 0
+    }else if(method=="exp"){
+      var_name <- paste0(indep_var, "_exp")
+      df[,var_name] <- exp(df[,indep_var])
+    }else if(method=="inv"){
+      var_name <- paste0(indep_var, "_inv")
+      df[,var_name] <- 1/df[,indep_var]
+    }else if(method=="square"){
+      var_name <- paste0(indep_var, "_square")
+      df[,var_name] <- df[,indep_var]**2
+    }
+    return(df)
+  }else{
+    return(df)
+  }
+}
+
+delete_var <- function(df, indep_var){
+  if(indep_var %in% names(df)){
+    df[,indep_var] <- NULL
+    return(df)
+  }else{
+    return(df)
+  }
+}
+
+binning <- function(df, indep_var, dep_var, method, bins, cuts){
+  if(method=="auto"){
+    if(bins>1){
+      if(class(df[,indep_var])=="numeric" | class(df[,indep_var])=="integer"){
+        var_name <- paste0(indep_var, "_auto_bins")
+        df[,var_name] <- as.numeric(cut2(df[,indep_var], g=bins))
+      }else if(class(df[,indep_var])=="factor" | class(df[,indep_var])=="character"){
+        var_name <- paste0(indep_var, "_auto_bins")
+        df[,var_name] <- as.factor(df[,indep_var])
+        vars <- names(sort(prop.table(table(df[,var_name])), decreasing = TRUE))[1:(bins-1)]
+        vars_to_replace <- setdiff(unique(df[,var_name]),vars)
+        levels(df[,var_name])[levels(df[,var_name]) %in% vars_to_replace] <- "Other"
+      }
+      return(df)
+    }else{
+      return(df)
+    }
+  }else if(method=="manual"){
+    if(class(df[,indep_var])=="numeric" | class(df[,indep_var])=="integer"){
+      tryCatch({
+        var_name <- paste0(indep_var, "_manual_binning")
+        breaks <- as.numeric(unlist(strsplit(cuts, split=",")))
+        df[,var_name] <- as.numeric(df[,indep_var])
+        df[,var_name] <- as.numeric(cut(df[,var_name], breaks=breaks))
+        return(df)
+      },
+      warning = function(w){
+        return(df)
+      },
+      error = function(e){
+        return(df)
+      })
+    }else{
+      return(df)
+    }
+  }else if(method=="woe"){
+    if(bins>1){
+      var_name <- paste0(indep_var, "_woe_binning")
+      
+      tmp_df <- data.frame(x_var = df[,indep_var], y = df[,dep_var])
+      tmp_df <- setNames(tmp_df,c(indep_var,dep_var))
+      
+      woe_table = list()
+      woe_table <- create_infotables(data=tmp_df, valid=NULL, y=dep_var, bins = bins, parallel=FALSE)
+      
+      tmp_table <- woe_table[["Tables"]][[indep_var]]
+      
+      df[,var_name] <- df[,indep_var]
+      
+      if(class(df[,var_name])=="numeric" | class(df[,var_name])=="integer"){
+        for(i in 1:nrow(tmp_table)){
+          ll <- as.numeric(gsub(".*[[]([^,]+)[,].*", "\\1", tmp_table[i,1]))
+          ul <- as.numeric(gsub(".*[,]([^]]+)[]].*", "\\1", tmp_table[i,1]))
+          df[,var_name] <- ifelse(between(df[,var_name],ll,ul), tmp_table[i,4], df[,var_name])
+        }
+      }else if(class(df[,var_name])=="factor" | class(df[,var_name])=="character"){
+        df[,var_name] <- as.character(df[,var_name])
+        for(i in 1:nrow(tmp_table)){
+          df[which(df[,var_name] == tmp_table[i,1]),var_name] <- tmp_table[i,4]
+        }
+        df[,var_name] <- as.numeric(df[,var_name])
+      }
+      return(df)
+    }else{
+      return(df)
+    }
+  }
+}
+```
+[Go back to the top of the page](#top)
+
+## Variable Selection
+
+```{r VarSelection}
+
+# Information Value Calculation
+iv_calc_cfn <- function(df, dep_var){
+  #Placeholder for treating dep_var
+  signif_coeffs <- data.frame(Variable= character(), IV=numeric(), stringsAsFactors = F)
+  j = 1
+  n = length(setdiff(names(df),dep_var))
+  withProgress(message = 'Calculating Information Value', value = 0, {
+    for (i in names(df)) {
+      if(i != dep_var & length(unique(df[,i]))>1){
+        # Increment the progress bar, and update the detail text.
+        incProgress(1/n, detail = paste("For Variable", j))
+        j=j+1
+        tmp_df <- data.frame(x_var=df[,i], y=df[,dep_var])
+        IV <- create_infotables(data=tmp_df, valid=NULL, y='y', parallel=FALSE)
+        signif_coeffs[nrow(signif_coeffs)+1, ] <- c(i, IV$Summary[,2])
+      }
+    }
+  })
+  signif_coeffs$IV <- as.numeric(signif_coeffs$IV)
+  signif_coeffs <- signif_coeffs[order(-signif_coeffs[,"IV"]),]
+  rownames(signif_coeffs) <- NULL
+  return(signif_coeffs)
+}
+
+# Linear/Logistic Regression models with single independent and dependent variable 
+var_significance <- function(df, dep_var, method="classification"){
+  
+  lmp <- function (modelobject) {
+    if (class(modelobject) != "lm") stop("Not an object of class 'lm' ")
+    f <- summary(modelobject)$fstatistic
+    p <- pf(f[1],f[2],f[3],lower.tail=F)
+    attributes(p) <- NULL
+    return(p)
+  }
+  
+  coef <- c()
+  p_val <- c()
+  i = 1
+  n = length(setdiff(colnames(df),dep_var))
+  withProgress(message = 'Calculating Significance', value = 0, {
+    for (col in setdiff(colnames(df),dep_var)) {
+      # Increment the progress bar, and update the detail text.
+      incProgress(1/n, detail = paste("For Variable", i))
+      i=i+1
+      if(method=="classification"){
+        model <- glm(df[,dep_var] ~ df[,col], data = df, family = "binomial")
+        coef_tbl <- coef(summary(model))
+        coef <- c(coef, col)
+        p_val <- c(p_val, coef_tbl[2,4])
+      }else if(method=="regression"){
+        model <- lm(df[,dep_var] ~ df[,col], data = df)
+        coef <- c(coef, col)
+        p_val <- c(p_val, lmp(model))
+      }
+    }
+    })
+  
+  coef_summary_tbl <- data.frame(Variable = coef, p_values = p_val)
+  coef_summary_tbl$significance_0.01 <- ifelse(coef_summary_tbl$p_values < 0.01,"significant","not significant")
+  coef_summary_tbl$Variable <- as.character(coef_summary_tbl$Variable)
+  return(coef_summary_tbl)
+}
+
+# Chi-Square/T-test/Anova
+compute_statistical_significance <- function(df, dep_var, method="classification"){
+  if(method=="classification"){
+    Variable <- c()
+    p_value <- c()
+    for (i in setdiff(colnames(df),dep_var)) {
+      if(length(unique(df[,i]))==2){
+        res.chi_sq <- chisq.test(df[,i],df[,dep_var], simulate.p.value = TRUE)
+        p_val <- res.chi_sq$p.value
+        Variable <- c(Variable,i)
+        p_value <- c(p_value,p_val)
+      }else if(length(unique(df[,i]))>2){
+        res.aov <- aov(as.formula(paste0(dep_var," ~ `",i,"`")), data = df)
+        p_val <- summary(res.aov)[[1]][["Pr(>F)"]][1]
+        Variable <- c(Variable,i)
+        p_value <- c(p_value,p_val)
+      }
+    }
+    coef_summary_tbl <- data.frame(Variable = Variable, p_values = p_value)
+    coef_summary_tbl$significance_0.01 <- ifelse(coef_summary_tbl$p_values < 0.01,"significant","not significant")
+    return(coef_summary_tbl)
+  }else if(method=="regression"){
+    Variable <- c()
+    p_value <- c()
+    for (i in setdiff(colnames(df),dep_var)) {
+      if(length(unique(df[,i]))==2){
+        res.aov <- aov(as.formula(paste0(dep_var," ~ `",i,"`")), data = df)
+        p_val <- summary(res.aov)[[1]][["Pr(>F)"]][1]
+        Variable <- c(Variable,i)
+        p_value <- c(p_value,p_val)
+      }else if(length(unique(df[,i]))>2){
+        res.ttest <- t.test(df[,dep_var], df[,i], data = df)
+        p_val <- res.ttest$p.value
+        Variable <- c(Variable,i)
+        p_value <- c(p_value,p_val)
+      }
+    }
+    coef_summary_tbl <- data.frame(Variable = Variable, p_values = p_value)
+    coef_summary_tbl$significance_0.01 <- ifelse(coef_summary_tbl$p_values < 0.01,"significant","not significant")
+    return(coef_summary_tbl)
+  }
+}
+
+var_corr <- function(df, indep_var){
+  corr_table <- cor(df[-which(names(df) %in% indep_var)], df[,indep_var])
+  corr_df <- data.frame(Variable = rownames(corr_table), Correlation = corr_table[1:nrow(corr_table)])
+  corr_df$Correlation <- round(corr_df$Correlation, 4)
+  return(corr_df)
+}
+```
+[Go back to the top of the page](#top)
+
+## Train Test Split
+
+```{r Split, eval=F, echo=T}
+set.seed(123)
+sample <- sample.int(n = nrow(train), size = floor(.8*nrow(train)), replace = F)
+validation  <- train[-sample,]
+train <- train[sample,]
+rm(sample)
+invisible(gc())
+```
+[Go back to the top of the page](#top)
+
+## XGBoost Model Build
+```{r XGB, eval=F, echo=T}
+Y_train <- train$y
+Y_valid <- validation$y
+
+dtrain  <- xgb.DMatrix(as.matrix(train[,-which(names(train) %in% c("y"))]), label = Y_train)
+dvalid  <- xgb.DMatrix(as.matrix(validation[,-which(names(validation) %in% c("y"))]), label = Y_valid)
+watchlist <- list(train = dtrain, valid = dvalid)
+
+best_param <- list(objective = "binary:logistic",
+              eval_metric = "auc",
+              booster="gbtree",
+              max_depth = 6,
+              eta = 0.01,
+              gamma = 0, 
+              subsample = 0.5,
+              colsample_bytree = 1, 
+              min_child_weight = 1,
+              max_delta_step = 0)
+xgb_model <- xgb.train(params=best_param, dtrain, nrounds = 1000, watchlist, print_every_n = 5, early_stopping_rounds = 10, nthread=4)
+
+```
+[Go back to the top of the page](#top)
+
+## Model Evaluation
+```{r Evaluation}
+
+# Lift Chart
+lift <- function(depvar, predcol, groups=10) {
+  if(is.factor(depvar)) depvar <- as.integer(as.character(depvar))
+  if(is.factor(predcol)) predcol <- as.integer(as.character(predcol))
+  helper = data.frame(cbind(depvar, predcol))
+  helper[,"bucket"] = ntile(-helper[,"predcol"], groups)
+  gaintable = helper %>% group_by(bucket)  %>%
+    summarise_at(vars(depvar), funs(total = n(),
+                                    totalresp=sum(., na.rm = TRUE))) %>%
+    mutate(Cumresp = cumsum(totalresp),
+           Gain=Cumresp/sum(totalresp)*100,
+           Cumlift=Gain/(bucket*(100/groups)))
+  return(gaintable)
+}
+
+# Accuracy metrics for classification (AUC, accuracy, etc.) and regression (MSE, RMSE, MAPE, etc.)
+accuracy_metrics <- function(pred_valid, Y_valid, method="classification"){
+  if(method=="classification"){
+    prediction <- pred_valid
+    Y_valid <- as.factor(Y_valid)
+    rocCurve   <- roc(response = Y_valid, predictor = prediction, levels = rev(levels(Y_valid)))
+    #Metrics - Fit Statistics
+    predclass <-ifelse(prediction>coords(rocCurve,"best")[1],1,0)
+    Confusion <- table(Predicted = predclass,Actual = Y_valid)
+    AccuracyRate <- sum(diag(Confusion))/sum(Confusion)
+    Gini <-2*auc(rocCurve)-1
+    AUCmetric <- data.frame(c(coords(rocCurve,"best"),AUC=auc(rocCurve),AccuracyRate=AccuracyRate,Gini=Gini))
+    AUCmetric <- data.frame(rownames(AUCmetric),AUCmetric)
+    rownames(AUCmetric) <-NULL
+    names(AUCmetric) <- c("Metric","Values")
+    return(list(AUCmetric = AUCmetric, Confusion = Confusion))
+  }else if(method=="regression"){
+    mse <- mean((Y_valid - pred_valid)^2)
+    rmse <- sqrt(mean((Y_valid - pred_valid)^2))
+    mae <- mean(abs(Y_valid - pred_valid))
+    mape <- mean(abs((Y_valid-pred_valid)/Y_valid)*100)
+    rsq <- cor(Y_valid,pred_valid)^2
+    eval_metrics <- data.frame(Metric = c("mse","rmse","mae","mape","r-square"),
+                               Value = c(mse,rmse,mae,mape,rsq))
+    return(eval_metrics)
+  }
+}
+
+```
+[Go back to the top of the page](#top)
+
+## Model Interpretation
+```{r, eval=F, echo=T}
+imp <- xgb.importance(colnames(train), model=xgb_model)
+
+# Top 10 Important Variables For Classification
+ggplot(imp[1:10,], aes(x=reorder(Feature,Gain), y=Gain,fill=Gain))+ 
+  geom_bar(stat="identity", position="dodge", show.legend = T)+ coord_flip()+
+  ylab("Variable Importance")+
+  xlab("")+
+  ggtitle("Variable Importance Plot")+
+  scale_fill_gradient(low="red", high="blue")+theme_bw()
+
+# Top 10 Important Variables For Regression
+ggplot(imp[1:10,], aes(x=reorder(Feature,Weight), y=Weight, fill=Weight))+ 
+          geom_bar(stat="identity", position="dodge", show.legend = T)+ coord_flip()+
+          ylab("Weight")+
+          xlab(as.character("Variable Importance"))+
+          ggtitle(paste0("Variable Importance by ",as.character("Weight")))+
+          scale_fill_gradient(low="red", high="blue")+labs(fill="Weight")+theme_bw()
+
+# Partial Dependence Plot
+pdp_plot <- partial(xgb_model, pred.var = var, train = train[,-which(names(train) %in% c(dep_var))], prob = T, chull = T, parallel = F)
+
+if(method=="classification"){
+  pdp <-  ggplot() + 
+    geom_line(data=ls_container$ls_pdp[[var]], aes(ls_container$ls_pdp[[var]][,1], yhat),colour="blue") +
+    xlab(var)+
+    ylab("Probability")+
+    labs(title="Partial Dependence Plot")+
+    theme_bw()
+}else if(method=="regression"){
+  pdp <- ggplot() + 
+    geom_line(data=ls_container$ls_pdp[[var]], aes(ls_container$ls_pdp[[var]][,1], yhat),colour="blue") +
+    xlab(var)+
+    ylab(dep_var)+
+    labs(title="Partial Dependence Plot")+
+    theme_bw()
+}
+
+# Density Plot
+if(method=="classification"){
+    density_plot <-
+      ggplot(train[,c(var,dep_var)], aes_string(x = var, fill = as.factor(train[, dep_var]))) +
+      geom_density(alpha = 0.4) + labs(title = "Density Plot") +
+      xlab(var) +
+      scale_fill_discrete(name = dep_var) + theme_bw()
+  }else if(method=="regression"){
+    density_plot <-
+      ggplot(train[,c(var,dep_var)], aes_string(x = var)) +
+      geom_density(color = "darkblue", fill = "lightblue") + 
+      labs(title = "Density Plot") +
+      xlab(var) + theme_bw()
+  }
+
+```
+[Go back to the top of the page](#top)
+
+
+
+
+
