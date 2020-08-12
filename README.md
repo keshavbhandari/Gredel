@@ -1,2 +1,2 @@
 # Gredel
-Automated R-Shiny based UI platform to create and deploy a XGBoost model on ANY dataset. Additionally it also includes black box ML interpretation techniques such as PDP, ALE Plots, permutation importance to uncover the importance, direction and magnitude of variables with respect to the dependent variable.
+Automated R-Shiny based UI platform to create and deploy a XGBoost model on ANY dataset. It also includes black box ML interpretation techniques such as PDP, ALE Plots, permutation importance to uncover the importance, direction and magnitude of variables with respect to the dependent variable. Additionally, the package includes techniques to extract the most predictive feature interactions from XGBoost trees.
